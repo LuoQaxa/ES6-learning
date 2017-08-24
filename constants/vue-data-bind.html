@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>vue-data-bind</title>
+</head>
+<body>
+	<div id="app">
+	  <input type="text" v-model="text">
+	  {{ text }}
+	</div>
+<!-- 	Vue进行编译时，就是将挂载目标的所有子节点劫持（真的是劫持）到DocumentFragment中，经过一番处理后，再将DocumentFragment整体返回插入挂载目标。使用DocumentFragment处理节点，速度和性能远远优于直接操作DOM -->
+
+<!-- 发布订阅模式，多个观察者同时监听某一个主题对象，这个主题对象的状态发生改变就通知所有观察者对象 -->
+<!-- 发布者发出通知-》主题对象收到通知并推送给订阅者-》订阅者执行相应操作。-->
+	<script>
+		// publisher
+		// var pub = {
+		// 	publish:function(){
+		// 		dep.notify();
+		// 	}
+		// }
+		// // 三个subscribers
+		// var sub1 = { update: function(){console.log(1)}}
+		// var sub2 = { update: function(){console.log(2)}}
+		// var sub3 = { update: function(){console.log(3)}}
+		// // 一个主题对象
+		// function Dep (){
+		// 	this.subs = [sub1, sub2, sub3]
+		// }
+
+		// Dep.prototype.notify = function() {
+		// 	this.subs.forEach(function(sub) {
+		// 		sub.update()
+		// 	})
+		// }
+
+		// var dep = new Dep();
+		// pub.publish();
+		// set方法触发后需要作为发布者发出通知，文本节点是订阅者，在收到消息后执行相应的更新操作
+		function Dep() {
+			this.subs = []
+		}
+		Dep.prototype = {
+			addSub: function(sub) {
+				this.subs.push(sub);
+			},
+			notify: function() {
+				this.subs.forEach(function(sub) {
+					sub.update();
+				})
+			}
+		}
+
+
+		function defineReactive(obj, key, val){
+			var dep = new Dep();
+			Object.defineProperty(obj, key,{
+				get:function (){
+					if (Dep.target) dep.addSub(Dep.target);
+					return val
+				},
+				set:function(newVal) {
+					if (newVal === val) return
+					val = newVal;
+					console.log(val)
+					dep.notify();
+				}
+			})
+		}
+		function observe(obj,vm){
+			Object.keys(obj).forEach(function(key) {
+				defineReactive(vm, key, obj[key])
+			})
+		}
+		function Vue (options) {
+		  this.data = options.data;
+		  var data = this.data;
+		  // 监听数据
+		  // data中的每一个属性生成一个主题对象dep，就是负责通知
+		  observe(data, this);
+		  var id = options.el;
+		  // 编译html
+		  var dom = nodeToFragment(document.getElementById(id), this);
+		  // 编译完成后，将dom返回到app中
+		  document.getElementById(id).appendChild(dom); 
+		}
+
+		var vm = new Vue({
+		  el: 'app',
+		  data: {
+		    text: 'hello world'
+		  }
+		});
+		function Watcher(vm, node, name) {
+			Dep.target = this;
+			this.name = name;
+			this.node = node;
+			this.vm = vm;
+			this.update();
+			Dep.target = null;
+		}
+
+		Watcher.prototype = {
+			update:function() {
+				this.get();
+				this.node.nodeValue = this.value;
+			},
+			// 获取data中的属性值
+			get:function() {
+				this.value = this.vm[this.name];
+			}
+
+		}
+		function compile (node, vm) {
+			 // {{}}匹配
+		     var reg = /\{\{(.*)\}\}/;
+		     // 节点类型为元素
+		     if (node.nodeType === 1) {
+		       var attr = node.attributes;
+		       // 解析属性 属性是一个数组
+		       for (var i = 0; i < attr.length; i++) {
+		       	 // attr[i]获取属性节点。属性节点的nodeName就是属性名
+		         if (attr[i].nodeName == 'v-model') {
+		         	// v-model="text" name=text
+		           var name = attr[i].nodeValue; // 获取v-model绑定的属性名
+		           node.addEventListener('input', function (e) {
+		             // 给相应的data属性赋值，进而触发该属性的set方法
+		             vm[name] = e.target.value;
+		           });
+		           node.value = vm[name]; // 将data的值赋给该node
+		           node.removeAttribute('v-model');
+		         }
+		       };
+		       new Watcher(vm, node, name, 'input');
+		     }
+		     // 节点类型为text
+		     if (node.nodeType === 3) {
+		       if (reg.test(node.nodeValue)) {
+		         var name = RegExp.$1; // 获取匹配到的字符串
+		         name = name.trim();
+		         // 为每一个数据绑定相关的节点生成一个订阅者watcher，watcher会将自己添加到相应属性dep中
+		         new Watcher(vm, node, name, 'text');
+		       }
+		     }
+		   }
+
+		function nodeToFragment(node,vm) {
+		  var flag = document.createDocumentFragment(),child;
+		  var n = 0;
+		  while (child = node.firstChild) {
+		  	// 感觉node.firstChild是一个可不断遍历的对象
+		  	// n++;
+		  	// console.log('this is' + n+'次')
+		  	// console.log(child)
+		  	compile(child, vm);
+		    flag.append(child)
+		//     劫持node的所有子节点
+		  }
+		  return flag
+		}
+		// var dom = nodeToFragment(document.getElementById('app'));
+		// console.log(dom)
+		// document.getElementById('app').appendChild(dom)
+	</script>
+</body>
+</html>
